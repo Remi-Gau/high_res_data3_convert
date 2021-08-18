@@ -10,6 +10,9 @@ clean:
 	rm -rf lib
 	rm -rf ../sub-01 ../*.json ../README ../CHANGES ../derivatives
 
+clean_data:
+	rm -rf ../sub-01 ../*.json ../README ../CHANGES ../derivatives
+
 data:
 	sh createDummyDataSet.sh
 	git clone git://github.com/bids-standard/bids-examples.git --depth 1

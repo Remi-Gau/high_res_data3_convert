@@ -7,8 +7,8 @@ function convert_data3_ds_to_bids()
   % (C) Copyright 2021 Remi Gau
 
   subject_label = '01';
-  
-  participant_tsv_content.participant_id = '01';
+
+  participant_tsv_content.participant_id = 'sub-01';
   participant_tsv_content.gender = 'M';
   participant_tsv_content.age = 33;
   participant_tsv_content.height = 1.85;
@@ -23,6 +23,11 @@ function convert_data3_ds_to_bids()
   func.repetition_time = 1.35;
   func.acq = 'pt8';
   func.nb_runs = 8;
+
+  task.first_onset = 12;
+  task.block_onset_asynchrony = 24;
+  task.nb_condition_block = 6;
+  task.block_duration = 12;
 
   description = struct( ...
                        'BIDSVersion', '1.6.0', ...
@@ -41,89 +46,97 @@ function convert_data3_ds_to_bids()
     error('run "make install"');
   end
 
-  input_dir.anat = fullfile(working_directory, '..', 'source', 'Data3', 'structural');
-  input_dir.func = fullfile(working_directory, '..', 'source', 'Data3', 'functional');
+  input_dir.anat = fullfile(working_directory, '..', 'sourcedata', 'Data3', 'structural');
+  input_dir.func = fullfile(working_directory, '..', 'sourcedata', 'Data3', 'functional');
   output_dir = fullfile(working_directory, '..');
 
   % init raw data folders
   bids.init(output_dir, folders);
   overwrite_dataset_description(fullfile(output_dir, 'dataset_description.json'), description);
-
-  % init derivatives data folders for UNI image
-  folders.modalities = 'anat';
-  bids.util.mkdir(get_derivatives_dir(output_dir, scanner));
-  bids.init(get_derivatives_dir(output_dir, scanner), folders);
-  description.DatasetType = 'derivative';
-  overwrite_dataset_description(fullfile(get_derivatives_dir(output_dir, scanner), ...
-                                         'dataset_description.json'), ...
-                                description);
-  delete(fullfile(get_derivatives_dir(output_dir, scanner), 'README'));
+  bids.util.tsvwrite(fullfile(output_dir, 'participants.tsv'), participant_tsv_content);
 
   convert_func(input_dir, output_dir, subject_label, func);
-  create_events_tsv_file(output_dir, subject_label, func);
+  create_events_tsv_file(output_dir, subject_label, func, task);
   create_bold_json(output_dir, func, subject_label);
 
+  convert_mp2rage(input_dir, output_dir, subject_label);
+
 end
 
-function derivatives_dir = get_derivatives_dir(output_dir, scanner)
-  derivatives_dir = fullfile(output_dir, 'derivatives', scanner.manufacturer);
-end
+function convert_mp2rage(input_dir, output_dir, subject_label)
 
-function convert_mp2rage(input_dir, output_dir, opt, subject_label, anat)
-    
-    fields_to_remove = {'InstitutionName', ...
-    'InstitutionAddress', ...
-    'PatientName',
-	'PatientSex', ... 
-	'PatientAge', ...
-	'PatientSize', ...
-	'PatientWeight')
+  fields_to_remove = {'InstitutionName', ... % "anonymize" dataset
+                      'InstitutionAddress', ...
+                      'PatientName', ... % move to participants.tsv
+                      'PatientSex', ...
+                      'PatientAge', ...
+                      'PatientSize', ...
+                      'PatientWeight', ...
+                      'RepetitionTime', ... % replaced by RepetitionTimePreparation
+                      };
 
-  fields_to_remove_to_add = struct(
-                        'RepetitionTimeExcitation', nan, ...
-                        'RepetitionTimePreperation', nan, ...
-                        'NumberShots', nan, ...
-                        'MagneticFieldStrength', 7);
+  fields_to_add = struct('NumberShots', nan, ...
+                         'MagneticFieldStrength', 7);
 
-  %     └── sub-01/
-  %      └── anat/
-  %          ├── sub-01_inv-1_part-mag_MP2RAGE.nii.gz
-  %          ├── sub-01_inv-1_part-phase_MP2RAGE.nii.gz
-  %          ├── sub-01_inv-1_MP2RAGE.json
-  %          ├── sub-01_inv-2_part-mag_MP2RAGE.nii.gz
-  %          ├── sub-01_inv-2_part-phase_MP2RAGE.nii.gz
-  %          └── sub-01_inv-2_MP2RAGE.json
+  % From the BIDS spec:
+  %  https://bids-specification.readthedocs.io/en/stable/99-appendices/11-qmri.html#mp2rage-specific-notes
   %
-  %
-  %      ds-example/
-  %      └── derivatives/
-  %          └── Siemens/
-  %              └── sub-01/
-  %                  └── anat/
-  %                      ├── sub-01_UNIT1.nii.gz
-  %                      └── sub-01_UNIT1.json
+  % RepetitionTimeExcitation
+  % The value of the RepetitionTimeExcitation field is not commonly found in the DICOM files. 
+  % When accessible, the value of EchoSpacing corresponds to this metadata. 
+  % When not accessible, 2 X EchoTime can be used as a surrogate.
+                     
 
   for inv = 1:2
-      
-          pattern = sprintf('^.*run%i.nii.gz$', iRun);
-    input_file = bids.internal.file_utils('FPList', input_dir.func, pattern);
-  
-  file = struct('suffix', 'MP2RAGE', ...
-      'acq', 'pt75', ...
-                'ext', '.nii.gz', ...
-                'use_schema', true, ...
-                'entities', struct('sub', subject_label, ...
-                                   'part', 'mag'));
 
+    pattern = sprintf('^.*INV%i.nii.gz$', inv);
+    input_file = bids.internal.file_utils('FPList', input_dir.anat, pattern);
+
+    file = struct('suffix', 'MP2RAGE', ...
+                  'ext', '.nii.gz', ...
+                  'use_schema', true, ...
+                  'entities', struct('sub', subject_label, ...
+                                     'acq', 'pt75', ...
+                                     'part', 'mag'));
+
+    file.entities.inv = num2str(inv);
+    filename = bids.create_filename(file);
+    output_file = fullfile(output_dir, bids.create_path(filename), filename);
+    
+    copyfile(input_file, output_file);
+
+    json_content = bids.util.jsondecode(strrep(input_file, '.nii.gz', '.json'));
+    fields = fieldnames(fields_to_add);
+    for i = 1:numel(fields) 
+      json_content.(fields{i}) = fields_to_add.(fields{i});
+    end
+    json_content.RepetitionTimeExcitation = json_content.EchoTime * 2;
+    json_content.RepetitionTimePreparation = json_content.RepetitionTime;
+    json_content = rmfield(json_content, fields_to_remove);
+    
+    bids.util.jsonencode(strrep(output_file, '.nii.gz', '.json'), ...
+                         json_content);
+
+  end
+  
+  % UNI image
+  pattern = '^.*UNI.*.nii.gz$';
+  input_file = bids.internal.file_utils('FPList', input_dir.anat, pattern);
+  file = struct('suffix', 'UNIT1', ...
+                  'ext', '.nii.gz', ...
+                  'use_schema', true, ...
+                  'entities', struct('sub', subject_label, ...
+                                     'acq', 'pt75'));
+                                 
   filename = bids.create_filename(file);
   output_file = fullfile(output_dir, bids.create_path(filename), filename);
-
-  bids.util.jsonencode(strrep(output_file, 'nii.gz', '.json'), ...
-                       json_content);
-
   copyfile(input_file, output_file);
   
-  end
+  json_content = bids.util.jsondecode(strrep(input_file, 'UNI.nii.gz', 'UNI_Images.json'));
+  json_content = rmfield(json_content, fields_to_remove);
+  
+  bids.util.jsonencode(strrep(output_file, '.nii.gz', '.json'), ...
+      json_content);
   
 end
 
@@ -151,15 +164,15 @@ function convert_func(input_dir, output_dir, subject_label, func)
 
 end
 
-function create_events_tsv_file(output_dir, subject_label, func)
+function create_events_tsv_file(output_dir, subject_label, func, task)
 
-  first_onset = 12;
-  block_onset_asynchrony = 24;
-  nb_condition_block = 6;
+  onset_column = task.first_onset: ...
+      task.block_onset_asynchrony: ...
+      (task.nb_condition_block * task.block_onset_asynchrony);
+  duration_column = repmat(task.block_duration, [task.nb_condition_block, 1]);
 
-  onset_column = first_onset:block_onset_asynchrony:(nb_condition_block * block_onset_asynchrony);
-  duration_column = repmat(12, [nb_condition_block, 1]);
-  trial_type_column = repmat(['a'; 'b'], [nb_condition_block / 2, 1]);
+  % a bit of hard coding left here [:-(]
+  trial_type_column = repmat(['a'; 'b'], [task.nb_condition_block / 2, 1]);
 
   tsv_content = struct('onset', onset_column, ...
                        'duration', duration_column, ...
@@ -202,4 +215,22 @@ function create_bold_json(output_dir, func, subject_label)
   bids.util.jsonencode(fullfile(output_dir, ['sub-' subject_label], 'func', filename), ...
                        json_content);
 
+end
+
+function create_readme()
+    
+% Summary
+% 
+% 18 Files, 2.69GB
+% 1 - Subject
+% 1 - Session
+% 
+% Available Tasks
+% 
+% taskAB
+% 
+% Available Modalities
+% 
+% MRI
+    
 end

@@ -72,8 +72,8 @@ function convert_mp2rage(input_dir, output_dir, subject_label)
                       'PatientAge', ...
                       'PatientSize', ...
                       'PatientWeight', ...
-                      'RepetitionTime', ... % replaced by RepetitionTimePreparation
-                      };
+                      'RepetitionTime' ... % replaced by RepetitionTimePreparation
+                     };
 
   fields_to_add = struct('NumberShots', nan, ...
                          'MagneticFieldStrength', 7);
@@ -82,10 +82,9 @@ function convert_mp2rage(input_dir, output_dir, subject_label)
   %  https://bids-specification.readthedocs.io/en/stable/99-appendices/11-qmri.html#mp2rage-specific-notes
   %
   % RepetitionTimeExcitation
-  % The value of the RepetitionTimeExcitation field is not commonly found in the DICOM files. 
-  % When accessible, the value of EchoSpacing corresponds to this metadata. 
+  % The value of the RepetitionTimeExcitation field is not commonly found in the DICOM files.
+  % When accessible, the value of EchoSpacing corresponds to this metadata.
   % When not accessible, 2 X EchoTime can be used as a surrogate.
-                     
 
   for inv = 1:2
 
@@ -102,42 +101,45 @@ function convert_mp2rage(input_dir, output_dir, subject_label)
     file.entities.inv = num2str(inv);
     filename = bids.create_filename(file);
     output_file = fullfile(output_dir, bids.create_path(filename), filename);
-    
+
+    print_to_screen(input_file, output_file);
     copyfile(input_file, output_file);
 
     json_content = bids.util.jsondecode(strrep(input_file, '.nii.gz', '.json'));
     fields = fieldnames(fields_to_add);
-    for i = 1:numel(fields) 
+    for i = 1:numel(fields)
       json_content.(fields{i}) = fields_to_add.(fields{i});
     end
     json_content.RepetitionTimeExcitation = json_content.EchoTime * 2;
     json_content.RepetitionTimePreparation = json_content.RepetitionTime;
     json_content = rmfield(json_content, fields_to_remove);
-    
+
     bids.util.jsonencode(strrep(output_file, '.nii.gz', '.json'), ...
                          json_content);
 
   end
-  
+
   % UNI image
   pattern = '^.*UNI.*.nii.gz$';
   input_file = bids.internal.file_utils('FPList', input_dir.anat, pattern);
   file = struct('suffix', 'UNIT1', ...
-                  'ext', '.nii.gz', ...
-                  'use_schema', true, ...
-                  'entities', struct('sub', subject_label, ...
-                                     'acq', 'pt75'));
-                                 
+                'ext', '.nii.gz', ...
+                'use_schema', true, ...
+                'entities', struct('sub', subject_label, ...
+                                   'acq', 'pt75'));
+
   filename = bids.create_filename(file);
   output_file = fullfile(output_dir, bids.create_path(filename), filename);
+
+  print_to_screen(input_file, output_file);
   copyfile(input_file, output_file);
-  
+
   json_content = bids.util.jsondecode(strrep(input_file, 'UNI.nii.gz', 'UNI_Images.json'));
   json_content = rmfield(json_content, fields_to_remove);
-  
+
   bids.util.jsonencode(strrep(output_file, '.nii.gz', '.json'), ...
-      json_content);
-  
+                       json_content);
+
 end
 
 function convert_func(input_dir, output_dir, subject_label, func)
@@ -158,6 +160,7 @@ function convert_func(input_dir, output_dir, subject_label, func)
 
     output_file = fullfile(output_dir, bids.create_path(filename), filename);
 
+    print_to_screen(input_file, output_file);
     copyfile(input_file, output_file);
 
   end
@@ -218,19 +221,23 @@ function create_bold_json(output_dir, func, subject_label)
 end
 
 function create_readme()
-    
-% Summary
-% 
-% 18 Files, 2.69GB
-% 1 - Subject
-% 1 - Session
-% 
-% Available Tasks
-% 
-% taskAB
-% 
-% Available Modalities
-% 
-% MRI
-    
+
+  % Summary
+  %
+  % 18 Files, 2.69GB
+  % 1 - Subject
+  % 1 - Session
+  %
+  % Available Tasks
+  %
+  % taskAB
+  %
+  % Available Modalities
+  %
+  % MRI
+
+end
+
+function print_to_screen(input_file, output_file)
+  fprintf(1, '\n%s --> %s\n', input_file, output_file);
 end

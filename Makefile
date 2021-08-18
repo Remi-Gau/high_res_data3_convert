@@ -17,3 +17,6 @@ data:
 	sh createDummyDataSet.sh
 	git clone git://github.com/bids-standard/bids-examples.git --depth 1
 	cp bids-examples/synthetic/dataset_description.json bids-examples/synthetic/derivatives/fmriprep
+
+convert:
+	matlab -nodisplay -nosplash -nodesktop -r "run('convert_data3_ds_to_bids.m');exit;"

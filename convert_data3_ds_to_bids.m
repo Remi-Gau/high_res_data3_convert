@@ -24,11 +24,6 @@ function convert_data3_ds_to_bids()
   func.acq = 'pt8';
   func.nb_runs = 8;
 
-  task.first_onset = 12;
-  task.block_onset_asynchrony = 24;
-  task.nb_condition_block = 6;
-  task.block_duration = 12;
-
   description = struct( ...
                        'BIDSVersion', '1.6.0', ...
                        'Name', '???', ...
@@ -56,7 +51,7 @@ function convert_data3_ds_to_bids()
   bids.util.tsvwrite(fullfile(output_dir, 'participants.tsv'), participant_tsv_content);
 
   convert_func(input_dir, output_dir, subject_label, func);
-  create_events_tsv_file(output_dir, subject_label, func, task);
+  create_events_tsv_file(input_dir, output_dir, subject_label, func);
   create_bold_json(output_dir, func, subject_label);
 
   convert_mp2rage(input_dir, output_dir, subject_label);
@@ -167,29 +162,62 @@ function convert_func(input_dir, output_dir, subject_label, func)
 
 end
 
-function create_events_tsv_file(output_dir, subject_label, func, task)
+function create_events_tsv_file(input_dir, output_dir, subject_label, func)
+    
+    % onsall: (8 runs x 2 conditions x 3 trials x 2 onset/offset) - in millisecond
+    % fixall: (which is redundant as the stimulus presentation is 12sec on 12 off, 
+    %         so the fixation periods can be easily derived from the stimulus onset times, 
+    %         but its there anyway) , which is 8 runs x 7 fixations periods x 2 onset/offs
 
-  onset_column = task.first_onset: ...
-      task.block_onset_asynchrony: ...
-      (task.nb_condition_block * task.block_onset_asynchrony);
-  duration_column = repmat(task.block_duration, [task.nb_condition_block, 1]);
+  load(fullfile(input_dir.func, 'onsets.mat'), 'onsall');
+  
+  onsall = onsall / 1000; %#ok<NODEF>
+  
+  [nb_runs, nb_cdt, nb_trials, ~] = size(onsall);
 
-  % a bit of hard coding left here [:-(]
-  trial_type_column = repmat(['a'; 'b'], [task.nb_condition_block / 2, 1]);
-
-  tsv_content = struct('onset', onset_column, ...
-                       'duration', duration_column, ...
-                       'trial_type', {cellstr(trial_type_column)});
-
-  file = struct('suffix', 'events', ...
-                'modality', 'func', ...
-                'ext', '.tsv', ...
-                'entities', struct('sub', subject_label, ...
-                                   'task', func.task_name));
-  filename = bids.create_filename(file);
-
-  bids.util.tsvwrite(fullfile(output_dir, ['sub-' subject_label], 'func', filename), ...
-                     tsv_content);
+  for run = 1:nb_runs
+      
+      onset_column = [];
+      duration_column = [];
+      trial_type_column = {};
+      
+      for condition = 1:nb_cdt
+          
+          for trial = 1:nb_trials
+              
+              onset = onsall(run, condition, trial, 1);
+              offset = onsall(run, condition, trial, 2);
+              
+              onset_column = [onset_column; onset];
+              duration_column = [duration_column; offset - onset];
+              trial_type_column{end+1} = sprintf('condition_%i', condition);
+              
+          end
+          
+      end
+      
+      [onset_column, idx] = sort(onset_column);
+      duration_column = duration_column(idx);
+      trial_type_column = trial_type_column(idx);
+      
+      
+      tsv_content = struct('onset', onset_column, ...
+          'duration', duration_column, ...
+          'trial_type', {cellstr(trial_type_column)});
+      
+      file = struct('suffix', 'events', ...
+          'modality', 'func', ...
+          'ext', '.tsv', ...
+          'entities', struct('sub', subject_label, ...
+          'task', func.task_name, ...
+          'acq', func.acq, ...
+          'run', sprintf('%i', run)));
+      filename = bids.create_filename(file);
+      
+      bids.util.tsvwrite(fullfile(output_dir, ['sub-' subject_label], 'func', filename), ...
+          tsv_content);
+      
+  end
 
 end
 

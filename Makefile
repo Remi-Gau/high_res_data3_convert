@@ -20,3 +20,16 @@ data:
 
 convert:
 	matlab -nodisplay -nosplash -nodesktop -r "run('convert_data3_ds_to_bids.m');exit;"
+
+# to make an 'un-datalad-ed' zipped version of the dataset
+# I am sure there a prettier way to do this.
+zip:
+	mkdir ../../Data3_v -p
+	cp -R -L -v ../code ../../Data3_v/code
+	cp -R -L -v ../derivatives ../../Data3_v/derivatives
+	cp -R -L -v ../sub-01 ../../Data3_v/sub-01
+	cp -R -L -v ../CHANGES ../../Data3_v
+	cp -R -L -v ../README ../../Data3_v
+	cp -R -L -v ../*.json ../../Data3_v
+	cp -R -L -v ../*.tsv ../../Data3_v
+	sudo chmod -R +r+w ../../Data3_v
